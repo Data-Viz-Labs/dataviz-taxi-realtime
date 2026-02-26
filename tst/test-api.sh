@@ -81,6 +81,19 @@ test_endpoint "List Drivers (default)" "GET" "/drivers" 200
 test_endpoint "List Drivers (limit 10)" "GET" "/drivers?limit=10" 200
 test_endpoint "List Drivers (offset 50)" "GET" "/drivers?offset=50&limit=5" 200
 
+echo "=========================================="
+echo "Trip Endpoints"
+echo "=========================================="
+echo ""
+
+test_endpoint "List Trips (default)" "GET" "/trips" 200
+test_endpoint "List Trips (limit 10)" "GET" "/trips?limit=10" 200
+test_endpoint "List Trips (offset 100)" "GET" "/trips?offset=100&limit=5" 200
+test_endpoint "List Trips (filter by driver)" "GET" "/trips?driver_id=20000589&limit=5" 200
+test_endpoint "List Trips (filter by date)" "GET" "/trips?date=1372636858&limit=5" 200
+test_endpoint "List Trips (both filters)" "GET" "/trips?driver_id=20000589&date=1372636858&limit=5" 200
+test_endpoint "List Trips (no results)" "GET" "/trips?driver_id=99999999" 404
+
 # Summary
 echo "=========================================="
 echo "Test Summary"

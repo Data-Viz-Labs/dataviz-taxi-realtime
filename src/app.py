@@ -141,6 +141,70 @@ async def list_drivers(limit: int = 100, offset: int = 0):
     }
 
 
+@app.get("/trips")
+async def list_trips(
+    limit: int = 100,
+    offset: int = 0,
+    driver_id: int = None,
+    date: int = None
+):
+    """
+    List trips with optional filters.
+    
+    Args:
+        limit: Maximum number of trips to return
+        offset: Number of trips to skip
+        driver_id: Filter by TAXI_ID
+        date: Filter by timestamp (Unix epoch seconds)
+    """
+    if trips_df is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Data not loaded"}
+        )
+    
+    # Apply filters
+    filtered_df = trips_df.copy()
+    
+    if driver_id is not None:
+        filtered_df = filtered_df[filtered_df["TAXI_ID"] == driver_id]
+    
+    if date is not None:
+        # Filter by date (same day as provided timestamp)
+        filtered_df["date_only"] = pd.to_datetime(filtered_df["TIMESTAMP"], unit="s").dt.date
+        target_date = pd.to_datetime(date, unit="s").date()
+        filtered_df = filtered_df[filtered_df["date_only"] == target_date]
+        filtered_df = filtered_df.drop(columns=["date_only"])
+    
+    total = len(filtered_df)
+    
+    # Return 404 if no trips found
+    if total == 0:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "No trips found with the specified filters"}
+        )
+    
+    # Apply pagination and convert to dict
+    trips_subset = filtered_df.iloc[offset:offset + limit]
+    
+    # Replace NaN/inf values with None for JSON compatibility
+    trips_subset = trips_subset.replace({float('nan'): None, float('inf'): None, float('-inf'): None})
+    trips = trips_subset.to_dict(orient="records")
+    
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": len(trips),
+        "filters": {
+            "driver_id": driver_id,
+            "date": date
+        },
+        "trips": trips
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

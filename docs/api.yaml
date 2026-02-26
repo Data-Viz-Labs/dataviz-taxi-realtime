@@ -115,6 +115,95 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /trips:
+    get:
+      summary: List trips
+      description: Returns a paginated list of trips with optional filters
+      operationId: listTrips
+      tags:
+        - Trips
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of trips to return
+          required: false
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Number of trips to skip
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: driver_id
+          in: query
+          description: Filter by taxi driver ID
+          required: false
+          schema:
+            type: integer
+            example: 20000589
+        - name: date
+          in: query
+          description: Filter by date (Unix timestamp in seconds)
+          required: false
+          schema:
+            type: integer
+            example: 1372636858
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    description: Total number of trips matching filters
+                    example: 1500
+                  limit:
+                    type: integer
+                    example: 100
+                  offset:
+                    type: integer
+                    example: 0
+                  count:
+                    type: integer
+                    description: Number of trips in this response
+                    example: 100
+                  filters:
+                    type: object
+                    properties:
+                      driver_id:
+                        type: integer
+                        nullable: true
+                        example: 20000589
+                      date:
+                        type: integer
+                        nullable: true
+                        example: 1372636858
+                  trips:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Trip'
+        '404':
+          description: No trips found with specified filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Data not loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   schemas:
     Driver:
@@ -143,6 +232,55 @@ components:
           format: float
           description: Average driver rating
           example: 4.04
+    
+    Trip:
+      type: object
+      properties:
+        TRIP_ID:
+          type: integer
+          description: Unique trip identifier
+          example: 1372636858620000589
+        TAXI_ID:
+          type: integer
+          description: Taxi driver identifier
+          example: 20000589
+        TIMESTAMP:
+          type: integer
+          description: Trip start time (Unix epoch seconds)
+          example: 1372636858
+        CALL_TYPE:
+          type: string
+          description: How the trip was requested
+          enum: [A, B, C]
+          example: C
+        DAY_TYPE:
+          type: string
+          description: Type of day
+          enum: [A, B, C]
+          example: A
+        MISSING_DATA:
+          type: boolean
+          description: Whether GPS data is missing
+          example: false
+        passengers:
+          type: integer
+          description: Number of passengers
+          example: 2
+        fare:
+          type: number
+          format: float
+          description: Trip fare in euros
+          example: 12.50
+        distance_km:
+          type: number
+          format: float
+          description: Trip distance in kilometres
+          example: 5.5
+        duration_min:
+          type: number
+          format: float
+          description: Trip duration in minutes
+          example: 12.2
     
     Error:
       type: object
