@@ -120,6 +120,27 @@ async def health_check():
     )
 
 
+@app.get("/drivers")
+async def list_drivers(limit: int = 100, offset: int = 0):
+    """List all taxi drivers."""
+    if drivers_df is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Data not loaded"}
+        )
+    
+    total = len(drivers_df)
+    drivers = drivers_df.iloc[offset:offset + limit].to_dict(orient="records")
+    
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": len(drivers),
+        "drivers": drivers
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

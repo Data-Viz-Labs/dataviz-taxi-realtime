@@ -1,0 +1,166 @@
+openapi: 3.0.3
+info:
+  title: Porto Taxi Real-Time Simulation API
+  description: |
+    REST API for simulating real-time taxi trip data from Porto, Portugal.
+    
+    ## Authentication
+    All endpoints (except /health) require two headers:
+    - `x-api-key`: Your API key
+    - `x-group-name`: Your group identifier
+    
+  version: 1.0.0
+  contact:
+    name: API Support
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://api.example.com
+    description: Production
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the API and whether data is loaded
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  data_loaded:
+                    type: boolean
+                    example: true
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unhealthy
+                  data_loaded:
+                    type: boolean
+                    example: false
+
+  /drivers:
+    get:
+      summary: List taxi drivers
+      description: Returns a paginated list of all taxi drivers in the system
+      operationId: listDrivers
+      tags:
+        - Drivers
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of drivers to return
+          required: false
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Number of drivers to skip
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    description: Total number of drivers
+                    example: 442
+                  limit:
+                    type: integer
+                    example: 100
+                  offset:
+                    type: integer
+                    example: 0
+                  count:
+                    type: integer
+                    description: Number of drivers in this response
+                    example: 100
+                  drivers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Driver'
+        '503':
+          description: Data not loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Driver:
+      type: object
+      properties:
+        TAXI_ID:
+          type: integer
+          description: Unique taxi identifier
+          example: 20000589
+        fuel_type:
+          type: string
+          description: Vehicle fuel type
+          enum: [diesel, hybrid, electric, lpg, gasoline]
+          example: hybrid
+        vehicle_year:
+          type: integer
+          description: Vehicle manufacturing year
+          example: 2012
+        comfort_base:
+          type: number
+          format: float
+          description: Base comfort rating
+          example: 4.1
+        driver_rating:
+          type: number
+          format: float
+          description: Average driver rating
+          example: 4.04
+    
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Data not loaded
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+    GroupAuth:
+      type: apiKey
+      in: header
+      name: x-group-name
+
+security:
+  - ApiKeyAuth: []
+    GroupAuth: []
