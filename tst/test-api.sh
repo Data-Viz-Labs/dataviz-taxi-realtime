@@ -7,8 +7,8 @@
 set -e
 
 BASE_URL="${1:-http://localhost:8000}"
-API_KEY="${API_KEY:-test-key}"
-GROUP_NAME="${GROUP_NAME:-test-group}"
+API_KEY="${API_KEY:-dev-key-12345}"
+GROUP_NAME="${GROUP_NAME:-dev-group}"
 
 echo "=========================================="
 echo "Porto Taxi API - Test Suite"
@@ -71,6 +71,68 @@ echo "=========================================="
 echo ""
 
 test_endpoint "Health Check" "GET" "/health" 200
+
+echo "=========================================="
+echo "Authentication Tests"
+echo "=========================================="
+echo ""
+
+# Test without headers
+echo -n "Testing: Missing API key ... "
+response=$(curl -s -w "\n%{http_code}" -X GET "$BASE_URL/drivers")
+status_code=$(echo "$response" | tail -n1)
+if [ "$status_code" -eq 401 ]; then
+    echo -e "${GREEN}✓ PASS${NC} (HTTP $status_code)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC} (Expected 401, got $status_code)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+echo -n "Testing: Missing group name ... "
+response=$(curl -s -w "\n%{http_code}" -X GET \
+    -H "x-api-key: $API_KEY" \
+    "$BASE_URL/drivers")
+status_code=$(echo "$response" | tail -n1)
+if [ "$status_code" -eq 401 ]; then
+    echo -e "${GREEN}✓ PASS${NC} (HTTP $status_code)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC} (Expected 401, got $status_code)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+echo -n "Testing: Invalid group name ... "
+response=$(curl -s -w "\n%{http_code}" -X GET \
+    -H "x-api-key: $API_KEY" \
+    -H "x-group-name: invalid-group" \
+    "$BASE_URL/drivers")
+status_code=$(echo "$response" | tail -n1)
+if [ "$status_code" -eq 403 ]; then
+    echo -e "${GREEN}✓ PASS${NC} (HTTP $status_code)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC} (Expected 403, got $status_code)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+echo -n "Testing: Invalid API key ... "
+response=$(curl -s -w "\n%{http_code}" -X GET \
+    -H "x-api-key: wrong-key" \
+    -H "x-group-name: $GROUP_NAME" \
+    "$BASE_URL/drivers")
+status_code=$(echo "$response" | tail -n1)
+if [ "$status_code" -eq 401 ]; then
+    echo -e "${GREEN}✓ PASS${NC} (HTTP $status_code)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC} (Expected 401, got $status_code)"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
 
 echo "=========================================="
 echo "Driver Endpoints"

@@ -6,18 +6,123 @@ Loads parquet files from local data/ directory or S3 bucket.
 """
 
 import os
+import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import pandas as pd
 import boto3
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("porto-taxi-api")
 
 # Global data storage
 trips_df = None
 drivers_df = None
+
+# Authentication configuration
+API_KEY = os.getenv("API_KEY", "dev-key-12345")
+VALID_GROUPS = os.getenv("VALID_GROUPS", "dev-group,test-group").split(",")
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Middleware to validate API key and group name headers."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Skip auth for health endpoint
+        if request.url.path == "/health":
+            return await call_next(request)
+        
+        # Extract headers
+        api_key = request.headers.get("x-api-key")
+        group_name = request.headers.get("x-group-name")
+        
+        # Log request attempt
+        logger.info(
+            f"AUTH_ATTEMPT | path={request.url.path} | "
+            f"method={request.method} | "
+            f"has_api_key={api_key is not None} | "
+            f"has_group={group_name is not None} | "
+            f"group={group_name or 'MISSING'}"
+        )
+        
+        # Check x-api-key header
+        if not api_key:
+            logger.warning(
+                f"AUTH_FAILED | reason=missing_api_key | "
+                f"path={request.url.path} | "
+                f"group={group_name or 'MISSING'}"
+            )
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Missing x-api-key header"}
+            )
+        
+        if api_key != API_KEY:
+            logger.warning(
+                f"AUTH_FAILED | reason=invalid_api_key | "
+                f"path={request.url.path} | "
+                f"group={group_name or 'MISSING'}"
+            )
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Invalid API key"}
+            )
+        
+        # Check x-group-name header
+        if not group_name:
+            logger.warning(
+                f"AUTH_FAILED | reason=missing_group | "
+                f"path={request.url.path}"
+            )
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Missing x-group-name header"}
+            )
+        
+        if group_name not in VALID_GROUPS:
+            logger.warning(
+                f"AUTH_FAILED | reason=invalid_group | "
+                f"path={request.url.path} | "
+                f"group={group_name} | "
+                f"valid_groups={','.join(VALID_GROUPS)}"
+            )
+            return JSONResponse(
+                status_code=403,
+                content={"error": f"Invalid group name. Valid groups: {', '.join(VALID_GROUPS)}"}
+            )
+        
+        # Add group to request state for logging/metrics
+        request.state.group = group_name
+        
+        # Log successful auth
+        logger.info(
+            f"AUTH_SUCCESS | path={request.url.path} | "
+            f"method={request.method} | "
+            f"group={group_name}"
+        )
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Log response
+        logger.info(
+            f"REQUEST_COMPLETE | path={request.url.path} | "
+            f"method={request.method} | "
+            f"group={group_name} | "
+            f"status={response.status_code}"
+        )
+        
+        return response
 
 
 def load_from_local() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -26,7 +131,7 @@ def load_from_local() -> tuple[pd.DataFrame, pd.DataFrame]:
     drivers_path = Path("data/drivers_memory.parquet")
     
     if trips_path.exists() and drivers_path.exists():
-        print("Loading data from local directory...")
+        logger.info("Loading data from local directory...")
         trips = pd.read_parquet(trips_path)
         drivers = pd.read_parquet(drivers_path)
         return trips, drivers
@@ -36,7 +141,7 @@ def load_from_local() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def download_from_s3(s3_path: str) -> None:
     """Download parquet files from S3 to local data directory."""
-    print(f"Downloading data from S3: {s3_path}")
+    logger.info(f"Downloading data from S3: {s3_path}")
     
     # Parse bucket and prefix from s3_path
     # Supports: "bucket/prefix" or "bucket"
@@ -44,7 +149,7 @@ def download_from_s3(s3_path: str) -> None:
     bucket_name = parts[0]
     prefix = parts[1] + "/" if len(parts) > 1 else ""
     
-    print(f"Bucket: {bucket_name}, Prefix: {prefix}")
+    logger.info(f"Bucket: {bucket_name}, Prefix: {prefix}")
     
     s3 = boto3.client("s3")
     local_dir = Path("data")
@@ -55,9 +160,9 @@ def download_from_s3(s3_path: str) -> None:
     for file in files:
         local_path = local_dir / file
         s3_key = f"{prefix}{file}"
-        print(f"Downloading s3://{bucket_name}/{s3_key}...")
+        logger.info(f"Downloading s3://{bucket_name}/{s3_key}...")
         s3.download_file(bucket_name, s3_key, str(local_path))
-        print(f"Downloaded {file} to {local_path}")
+        logger.info(f"Downloaded {file} to {local_path}")
 
 
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -66,7 +171,7 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     trips, drivers = load_from_local()
     
     if trips is not None and drivers is not None:
-        print(f"Loaded {len(trips)} trips and {len(drivers)} drivers from local")
+        logger.info(f"Loaded {len(trips)} trips and {len(drivers)} drivers from local")
         return trips, drivers
     
     # Try S3 if local fails
@@ -76,10 +181,10 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
             download_from_s3(bucket)
             trips, drivers = load_from_local()
             if trips is not None and drivers is not None:
-                print(f"Loaded {len(trips)} trips and {len(drivers)} drivers from S3")
+                logger.info(f"Loaded {len(trips)} trips and {len(drivers)} drivers from S3")
                 return trips, drivers
         except Exception as e:
-            print(f"Failed to load from S3: {e}")
+            logger.error(f"Failed to load from S3: {e}")
     
     raise RuntimeError("Could not load data from local or S3")
 
@@ -89,13 +194,13 @@ async def lifespan(app: FastAPI):
     """Load data on startup."""
     global trips_df, drivers_df
     
-    print("Starting application...")
+    logger.info("Starting application...")
     trips_df, drivers_df = load_data()
-    print("Data loaded successfully")
+    logger.info("Data loaded successfully")
     
     yield
     
-    print("Shutting down...")
+    logger.info("Shutting down...")
 
 
 app = FastAPI(
@@ -104,6 +209,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Add authentication middleware
+app.add_middleware(AuthMiddleware)
 
 
 @app.get("/health")
