@@ -1,5 +1,5 @@
 .kiro
 data/*.*
-
+!data/.gitkeep
 
 .ipynb_checkpoints
