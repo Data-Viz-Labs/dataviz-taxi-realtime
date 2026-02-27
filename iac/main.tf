@@ -1,6 +1,6 @@
 terraform {
   required_version = ">= 1.0"
-  
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -25,7 +25,7 @@ resource "random_password" "api_key" {
 
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
-  
+
   tags = {
     Project     = var.project_name
     Environment = var.environment

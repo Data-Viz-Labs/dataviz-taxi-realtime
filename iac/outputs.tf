@@ -38,3 +38,13 @@ output "valid_groups" {
   description = "Valid group names"
   value       = var.valid_groups
 }
+
+output "ecs_service_normal_name" {
+  description = "ECS normal service name"
+  value       = aws_ecs_service.normal.name
+}
+
+output "ecs_service_spot_name" {
+  description = "ECS spot service name"
+  value       = aws_ecs_service.spot.name
+}

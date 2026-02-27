@@ -70,18 +70,31 @@ tf-destroy:
 	@echo "Destroying infrastructure..."
 	@cd iac && terraform destroy -auto-approve
 containers-build:
-	@echo "Building Docker image..."
-	@docker build -f iac/assets/Dockerfile -t porto-taxi-api:latest .
+	@echo "Building container image..."
+	@if command -v podman >/dev/null 2>&1; then \
+		echo "Using Podman..."; \
+		podman build -f iac/assets/Dockerfile -t porto-taxi-api:latest .; \
+	elif command -v docker >/dev/null 2>&1; then \
+		echo "Using Docker..."; \
+		docker build -f iac/assets/Dockerfile -t porto-taxi-api:latest .; \
+	else \
+		echo "Error: Neither Docker nor Podman found"; \
+		exit 1; \
+	fi
 
 containers-reset:
 	@echo "Forcing ECS service update..."
-	@CLUSTER=$$(cd iac && terraform output -raw ecs_cluster_name 2>/dev/null) && \
-	if [ -z "$$CLUSTER" ]; then \
+	@CLUSTER=$$(cd iac && terraform output -raw ecs_cluster_name 2>/dev/null); \
+	SERVICE_NORMAL=$$(cd iac && terraform output -raw ecs_service_normal_name 2>/dev/null); \
+	SERVICE_SPOT=$$(cd iac && terraform output -raw ecs_service_spot_name 2>/dev/null); \
+	if [ -z "$$CLUSTER" ] || [ -z "$$SERVICE_NORMAL" ] || [ -z "$$SERVICE_SPOT" ]; then \
 		echo "Error: Infrastructure not deployed"; \
 		exit 1; \
-	fi && \
-	aws ecs update-service --cluster $$CLUSTER --service porto-taxi-prod-normal --force-new-deployment --region $(AWS_REGION) && \
-	aws ecs update-service --cluster $$CLUSTER --service porto-taxi-prod-spot --force-new-deployment --region $(AWS_REGION) && \
+	fi; \
+	echo "Updating service: $$SERVICE_NORMAL"; \
+	aws ecs update-service --cluster $$CLUSTER --service $$SERVICE_NORMAL --force-new-deployment --region $(AWS_REGION); \
+	echo "Updating service: $$SERVICE_SPOT"; \
+	aws ecs update-service --cluster $$CLUSTER --service $$SERVICE_SPOT --force-new-deployment --region $(AWS_REGION); \
 	echo "Services updated. New tasks will be deployed."
 
 containers-publish:

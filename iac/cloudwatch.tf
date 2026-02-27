@@ -3,7 +3,7 @@ resource "aws_cloudwatch_log_metric_filter" "auth_success_by_group" {
   name           = "${local.name_prefix}-auth-success-by-group"
   log_group_name = aws_cloudwatch_log_group.ecs.name
   pattern        = "[time, request_id, level=INFO, event=AUTH_SUCCESS, ...]"
-  
+
   metric_transformation {
     name      = "AuthSuccessByGroup"
     namespace = local.name_prefix
@@ -18,7 +18,7 @@ resource "aws_cloudwatch_log_metric_filter" "auth_failed" {
   name           = "${local.name_prefix}-auth-failed"
   log_group_name = aws_cloudwatch_log_group.ecs.name
   pattern        = "[time, request_id, level=WARNING, event=AUTH_FAILED, ...]"
-  
+
   metric_transformation {
     name      = "AuthFailed"
     namespace = local.name_prefix
@@ -29,7 +29,7 @@ resource "aws_cloudwatch_log_metric_filter" "auth_failed" {
 # CloudWatch Dashboard
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = local.name_prefix
-  
+
   dashboard_body = jsonencode({
     widgets = [
       {
@@ -155,15 +155,15 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          query   = <<-EOT
+          query  = <<-EOT
             SOURCE '${aws_cloudwatch_log_group.ecs.name}'
             | fields @timestamp, group
             | filter event = "AUTH_SUCCESS"
             | stats count() by group
             | sort count desc
           EOT
-          region  = var.aws_region
-          title   = "Requests by Group (Last Hour)"
+          region = var.aws_region
+          title  = "Requests by Group (Last Hour)"
         }
       },
       {
@@ -194,14 +194,14 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          query   = <<-EOT
+          query  = <<-EOT
             SOURCE '${aws_cloudwatch_log_group.ecs.name}'
             | fields @timestamp, event, reason
             | filter event = "AUTH_FAILED"
             | stats count() by reason
           EOT
-          region  = var.aws_region
-          title   = "Auth Failure Reasons"
+          region = var.aws_region
+          title  = "Auth Failure Reasons"
         }
       }
     ]

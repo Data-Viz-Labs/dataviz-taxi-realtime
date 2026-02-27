@@ -31,7 +31,7 @@ variable "container_cpu" {
 variable "container_memory" {
   description = "Fargate task memory in MB"
   type        = number
-  default     = 2048
+  default     = 4096
 }
 
 variable "desired_count_normal" {

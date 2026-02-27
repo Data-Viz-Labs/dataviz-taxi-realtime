@@ -1,19 +1,19 @@
 # ECS Cluster
 resource "aws_ecs_cluster" "main" {
   name = local.name_prefix
-  
+
   setting {
     name  = "containerInsights"
     value = "enabled"
   }
-  
+
   tags = local.tags
 }
 
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution" {
   name = "${local.name_prefix}-ecs-task-execution"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -24,7 +24,7 @@ resource "aws_iam_role" "ecs_task_execution" {
       }
     }]
   })
-  
+
   tags = local.tags
 }
 
@@ -36,7 +36,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
 resource "aws_iam_role_policy" "ecs_secrets" {
   name = "secrets-access"
   role = aws_iam_role.ecs_task_execution.id
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -52,7 +52,7 @@ resource "aws_iam_role_policy" "ecs_secrets" {
 # IAM Role for ECS Task
 resource "aws_iam_role" "ecs_task" {
   name = "${local.name_prefix}-ecs-task"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -63,14 +63,14 @@ resource "aws_iam_role" "ecs_task" {
       }
     }]
   })
-  
+
   tags = local.tags
 }
 
 resource "aws_iam_role_policy" "ecs_task_s3" {
   name = "s3-access"
   role = aws_iam_role.ecs_task.id
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -91,7 +91,7 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${local.name_prefix}"
   retention_in_days = 7
-  
+
   tags = local.tags
 }
 
@@ -104,23 +104,23 @@ resource "aws_ecs_task_definition" "app" {
   memory                   = var.container_memory
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
-  
+
   container_definitions = jsonencode([{
     name  = "app"
     image = "${aws_ecr_repository.app.repository_url}:latest"
-    
+
     portMappings = [{
       containerPort = 8000
       protocol      = "tcp"
     }]
-    
+
     environment = [
       {
         name  = "S3_BUCKET"
         value = "${aws_s3_bucket.data.id}/data"
       }
     ]
-    
+
     secrets = [
       {
         name      = "API_KEY"
@@ -131,7 +131,7 @@ resource "aws_ecs_task_definition" "app" {
         valueFrom = "${aws_secretsmanager_secret.api_key.arn}:valid_groups::"
       }
     ]
-    
+
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -140,16 +140,16 @@ resource "aws_ecs_task_definition" "app" {
         "awslogs-stream-prefix" = "ecs"
       }
     }
-    
+
     healthCheck = {
-      command     = ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval    = 30
-      timeout     = 5
-      retries     = 3
-      startPeriod = 60
+      timeout     = 10
+      retries     = 5
+      startPeriod = 120
     }
   }])
-  
+
   tags = local.tags
 }
 
@@ -160,21 +160,21 @@ resource "aws_ecs_service" "normal" {
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.desired_count_normal
   launch_type     = "FARGATE"
-  
+
   network_configuration {
     subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = true
   }
-  
+
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
     container_name   = "app"
     container_port   = 8000
   }
-  
+
   depends_on = [aws_lb_listener.app]
-  
+
   tags = local.tags
 }
 
@@ -184,26 +184,26 @@ resource "aws_ecs_service" "spot" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.desired_count_spot
-  
+
   capacity_provider_strategy {
     capacity_provider = "FARGATE_SPOT"
     weight            = 1
   }
-  
+
   network_configuration {
     subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = true
   }
-  
+
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
     container_name   = "app"
     container_port   = 8000
   }
-  
+
   depends_on = [aws_lb_listener.app]
-  
+
   tags = local.tags
 }
 
@@ -223,12 +223,12 @@ resource "aws_appautoscaling_policy" "ecs_memory" {
   resource_id        = aws_appautoscaling_target.ecs_normal.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs_normal.scalable_dimension
   service_namespace  = aws_appautoscaling_target.ecs_normal.service_namespace
-  
+
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageMemoryUtilization"
     }
-    
+
     target_value       = 70.0
     scale_in_cooldown  = 300
     scale_out_cooldown = 60
@@ -242,13 +242,13 @@ resource "aws_appautoscaling_policy" "ecs_requests" {
   resource_id        = aws_appautoscaling_target.ecs_normal.resource_id
   scalable_dimension = aws_appautoscaling_target.ecs_normal.scalable_dimension
   service_namespace  = aws_appautoscaling_target.ecs_normal.service_namespace
-  
+
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
       resource_label         = "${aws_lb.app.arn_suffix}/${aws_lb_target_group.app.arn_suffix}"
     }
-    
+
     target_value       = 1000.0
     scale_in_cooldown  = 300
     scale_out_cooldown = 60
