@@ -278,6 +278,28 @@ async def list_trips(
             content={"error": "Data not loaded"}
         )
     
+    # Validate date range if provided
+    if date is not None:
+        # Dataset range: 2013-07-01 00:00:53 to 2014-06-30 23:59:56
+        min_timestamp = 1372636853  # 2013-07-01 00:00:53
+        max_timestamp = 1404172796  # 2014-06-30 23:59:56
+        
+        if date < min_timestamp or date > max_timestamp:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Date out of range",
+                    "message": f"Date must be between 2013-07-01 and 2014-06-30",
+                    "provided_timestamp": date,
+                    "valid_range": {
+                        "min": min_timestamp,
+                        "max": max_timestamp,
+                        "min_date": "2013-07-01 00:00:53",
+                        "max_date": "2014-06-30 23:59:56"
+                    }
+                }
+            )
+    
     # Apply filters
     filtered_df = trips_df.copy()
     

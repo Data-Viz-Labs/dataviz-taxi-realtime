@@ -189,6 +189,15 @@ test_endpoint "List Trips (filter by date)" "GET" "/trips?date=1372636858&limit=
 test_endpoint "List Trips (both filters)" "GET" "/trips?driver_id=20000589&date=1372636858&limit=5" 200
 test_endpoint "List Trips (no results)" "GET" "/trips?driver_id=99999999" 404
 
+# Date validation tests
+echo "=========================================="
+echo "Date Validation Tests"
+echo "=========================================="
+echo ""
+
+test_endpoint "Date before range (2010-01-01)" "GET" "/trips?date=1262304000" 400
+test_endpoint "Date after range (2020-01-01)" "GET" "/trips?date=1577836800" 400
+
 echo "=========================================="
 echo "Live Simulation Endpoints"
 echo "=========================================="
