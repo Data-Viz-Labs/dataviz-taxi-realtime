@@ -1,0 +1,114 @@
+config:
+  target: "{{ $processEnvironment.API_URL }}"
+  phases:
+    # Warm-up: 5 users over 1 minute
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm-up"
+    
+    # Ramp 1: 10 users over 5 minutes
+    - duration: 300
+      arrivalRate: 10
+      name: "Ramp 1 - Light load"
+    
+    # Ramp 2: 20 users over 5 minutes
+    - duration: 300
+      arrivalRate: 20
+      name: "Ramp 2 - Medium load"
+    
+    # Ramp 3: 30 users over 5 minutes
+    - duration: 300
+      arrivalRate: 30
+      name: "Ramp 3 - Heavy load"
+    
+    # Ramp 4: 40 users over 5 minutes
+    - duration: 300
+      arrivalRate: 40
+      name: "Ramp 4 - Peak load"
+    
+    # Cool-down: 10 users over 2 minutes
+    - duration: 120
+      arrivalRate: 10
+      name: "Cool-down"
+  
+  defaults:
+    headers:
+      x-api-key: "{{ $processEnvironment.API_KEY }}"
+      x-group-name: "{{ $processEnvironment.GROUP_NAME }}"
+  
+  processor: "./artillery-processor.js"
+
+scenarios:
+  # Scenario 1: Health check (20% of traffic)
+  - name: "Health check"
+    weight: 20
+    flow:
+      - get:
+          url: "/health"
+          expect:
+            - statusCode: 200
+
+  # Scenario 2: List drivers (15% of traffic)
+  - name: "List drivers"
+    weight: 15
+    flow:
+      - get:
+          url: "/drivers?limit={{ randomLimit }}&offset={{ randomOffset }}"
+          beforeRequest: "setRandomPagination"
+          expect:
+            - statusCode: 200
+            - contentType: json
+
+  # Scenario 3: List trips (15% of traffic)
+  - name: "List trips"
+    weight: 15
+    flow:
+      - get:
+          url: "/trips?limit={{ randomLimit }}&offset={{ randomOffset }}"
+          beforeRequest: "setRandomPagination"
+          expect:
+            - statusCode: 200
+            - contentType: json
+
+  # Scenario 4: List trips by driver (10% of traffic)
+  - name: "List trips by driver"
+    weight: 10
+    flow:
+      - get:
+          url: "/trips?driver_id={{ randomDriverId }}&limit=50"
+          beforeRequest: "setRandomDriver"
+          expect:
+            - statusCode: [200, 404]
+            - contentType: json
+
+  # Scenario 5: Live all trips (20% of traffic)
+  - name: "Live all trips"
+    weight: 20
+    flow:
+      - get:
+          url: "/live"
+          expect:
+            - statusCode: [200, 404]
+            - contentType: json
+
+  # Scenario 6: Live driver trips (10% of traffic)
+  - name: "Live driver trips"
+    weight: 10
+    flow:
+      - get:
+          url: "/live/{{ randomDriverId }}"
+          beforeRequest: "setRandomDriver"
+          expect:
+            - statusCode: [200, 404]
+            - contentType: json
+
+  # Scenario 7: Live driver latest position (10% of traffic)
+  - name: "Live driver latest"
+    weight: 10
+    flow:
+      - get:
+          url: "/live/{{ randomDriverId }}/latest"
+          beforeRequest: "setRandomDriver"
+          expect:
+            - statusCode: [200, 404]
+            - contentType: json
