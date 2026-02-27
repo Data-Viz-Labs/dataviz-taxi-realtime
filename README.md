@@ -258,3 +258,15 @@ Original dataset: [Kaggle - Taxi Service Trajectory Prediction Challenge](https:
 ## Contributing
 
 This is a hackathon project. Feel free to fork and adapt for your needs.
+
+## Architecture Diagram
+
+![Architecture Diagram](docs/assets/diagram.png)
+
+The diagram illustrates the complete AWS infrastructure:
+- API clients connect through an Application Load Balancer
+- ECS Fargate runs both normal and spot instances for cost optimisation
+- FastAPI application serves requests from memory-loaded parquet files
+- S3 stores the data files, ECR hosts container images
+- Secrets Manager securely stores API keys and group configurations
+- CloudWatch provides comprehensive monitoring with logs, metrics, and dashboards
