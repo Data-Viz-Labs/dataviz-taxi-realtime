@@ -219,6 +219,18 @@ The CloudWatch dashboard displays:
 - Requests by group (log-based query)
 - Authentication failures
 
+### CloudWatch Metrics Dashboard
+
+![CloudWatch Metrics Dashboard](docs/assets/CW_Metrics_Dashboard.png)
+
+### ECS Metrics Dashboard
+
+![ECS Metrics Dashboard](docs/assets/ECS_Metrics_Dashboard.png)
+
+### API Running Logs
+
+![API Running Logs](docs/assets/api_running_logs.png)
+
 ## Makefile Targets
 
 ```bash
