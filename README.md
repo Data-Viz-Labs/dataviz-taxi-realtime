@@ -9,111 +9,112 @@ This project takes historical taxi trip data from Kaggle (Porto taxi trips with 
 ## Features
 
 - **Real-time simulation**: Historical data replayed as current events
-- **Scalable architecture**: ECS/Fargate containers with API Gateway caching
-- **Pre-computed data**: Pickle files for consistent responses across containers
-- **API key authentication**: Simple header-based validation (api-key + group)
-- **Live monitoring**: CloudWatch dashboard showing real-time metrics
-- **Load testing**: Artillery.io configuration included
+- **Scalable architecture**: ECS Fargate with auto-scaling (1-20 containers)
+- **Memory-optimised**: Auto-scaling based on memory utilisation (70% threshold)
+- **Pre-computed data**: Parquet files loaded into memory for fast responses
+- **API key authentication**: Header-based validation (x-api-key + x-group-name)
+- **Live monitoring**: CloudWatch dashboard with real-time metrics
+- **Spot instances**: Cost-optimised with Fargate Spot capacity
 
 ## Project Structure
 
 ```
 .
 ├── bin/                         # Bash scripts
-│   ├── check-deps.sh           # Dependency checker
-│   └── download-data.sh        # Kaggle dataset downloader
+│   ├── cleanup-aws.sh          # Pre-destroy cleanup (S3 + ECR)
+│   └── publish_ecr.sh          # Build and publish container (Docker/Podman)
 ├── docs/                        # Documentation
-│   ├── data_engineering.md     # Data engineering manual
-│   ├── api.html                # Api wrapper
-│   └── api.yaml                # Api definition file with OpenAPI@3
+│   ├── data_catalog.md         # Data dictionary
+│   └── api.yaml                # OpenAPI 3.0 specification
 ├── dpt/                         # Data Preparation & Transformation
-│   ├── EXTEND.py               # Dataset extension with random data
-│   ├── EDA.py                  # Find peak 2-hour window
-│   └── ETL.py                  # Generate pickle files
+│   └── Explorer.ipynb          # Jupyter notebook for data analysis
 ├── src/                         # Source code for REST API
-│   ├── app.py                  # FastAPI/Flask application
-│   ├── models.py               # Data models
-│   └── routes.py               # API endpoints
-├── iac/                         # Infrastructure as Code
-│   ├── main.tf                 # Terraform main configuration
-│   ├── ecs.tf                  # ECS/Fargate resources
-│   ├── api-gateway.tf          # API Gateway with caching
-│   ├── cloudwatch.tf           # Dashboard and monitoring
-│   └── variables.tf            # Terraform variables
+│   └── app.py                  # FastAPI application
+├── iac/                         # Infrastructure as Code (Terraform)
+│   ├── main.tf                 # Main configuration
+│   ├── vpc.tf                  # VPC with 2 public subnets
+│   ├── s3.tf                   # S3 bucket for data storage
+│   ├── ecr.tf                  # ECR repository
+│   ├── secrets.tf              # Secrets Manager (API key)
+│   ├── ecs.tf                  # ECS cluster + auto-scaling
+│   ├── alb.tf                  # Application Load Balancer
+│   ├── cloudwatch.tf           # Dashboard and log metrics
+│   ├── outputs.tf              # Terraform outputs
+│   ├── variables.tf            # Variable definitions
+│   ├── terraform.tfvars        # Variable values
+│   └── assets/
+│       └── Dockerfile          # Container definition
 ├── data/                        # Data directory
 │   ├── train.csv               # Original Kaggle dataset
 │   ├── archive.zip             # Downloaded archive
-│   └── *.pkl                   # Generated pickle files (gitignored)
+│   ├── drivers_memory.parquet  # Generated driver data
+│   └── trips_memory.parquet    # Generated trip data
 ├── tst/                         # Testing
-│   ├── notebook.ipynb          # Example usage notebook
-│   └── artillery.yml           # Load testing configuration
-├── Dockerfile                  # Container definition
+│   └── test-api.sh             # Bash test script (local/remote)
 ├── Makefile                    # Build and deployment commands
 ├── requirements.txt            # Production dependencies
 ├── requirements.dev.txt        # Development dependencies
 ├── .gitignore                  # Git ignore rules
-├── LICENSE                     # MIT License
+├── LICENSE                     # MIT Licence
 ├── README.md                   # This file
 └── TODOS.md                    # Task checklist
-
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-```bash
-# Check all dependencies
-./bin/check-deps.sh
-```
-
 Required:
-- Python 3.9+
-- Docker
+- Python 3.13+
+- Docker or Podman
 - Terraform
 - AWS CLI configured
-- Kaggle API credentials
+- Kaggle dataset (train.csv)
 
 ### Installation
 
 ```bash
-# Download dataset
-./bin/download-data.sh
+# Install Python dependencies
+pip install -r requirements.txt
 
-# Install development dependencies
-pip install -r requirements.dev.txt
-
-# Run EDA to find peak hours
-python src/eda/EDA.py
-
-# Extend dataset
-python src/etl/EXTEND.py
-
-# Generate pickle files
-python src/etl/ETL.py
+# Process data (see dpt/Explorer.ipynb)
+# This generates drivers_memory.parquet and trips_memory.parquet
 ```
 
 ### Local Development
 
 ```bash
 # Run API locally
-make run-local
+make run
 
-# Run tests
-make test
-
-# Build Docker image
-make build
+# Test locally
+./tst/test-api.sh
+# or explicitly
+TARGET=local ./tst/test-api.sh
 ```
 
 ### Deployment
 
 ```bash
-# Deploy infrastructure
-make deploy
+# Initialise Terraform
+make tf-init
 
-# Run load tests
-make load-test
+# Build and publish container
+make containers-build
+make containers-publish
+
+# Upload data to S3
+make data-upload
+
+# Deploy infrastructure
+make tf-plan
+make tf-deploy
+
+# Test remote deployment
+TARGET=remote ./tst/test-api.sh
+
+# Destroy infrastructure
+make tf-destroy
 ```
 
 ## API Usage
@@ -121,44 +122,48 @@ make load-test
 ### Authentication
 
 All requests require two headers:
-- `x-api-key`: Your API key
-- `x-group-name`: Your group identifier
+- `x-api-key`: Your API key (generated by Terraform)
+- `x-group-name`: Your group identifier (NATO phonetic alphabet: alpha, bravo, charlie, etc.)
 
 ### Endpoints
-
-**GET /trips/current**
-Returns trips happening "now" (simulated current time)
-
-**GET /trips/range?start={timestamp}&end={timestamp}**
-Returns trips within a time range
-
-**GET /trips/{trip_id}**
-Returns details for a specific trip
 
 **GET /health**
 Health check endpoint
 
+**GET /drivers?limit=20&offset=0**
+Returns paginated list of drivers
+
+**GET /trips?limit=20&offset=0&driver_id={id}&date={timestamp}**
+Returns paginated list of trips with optional filters
+
 ### Example Request
 
 ```bash
-curl -H "x-api-key: your-key" \
-     -H "x-group-name: team-alpha" \
-     https://api.example.com/trips/current
+# Get API credentials from Terraform
+API_KEY=$(cd iac && terraform output -raw api_key)
+API_URL=$(cd iac && terraform output -raw api_url)
+
+# Make request
+curl -H "x-api-key: $API_KEY" \
+     -H "x-group-name: alpha" \
+     "$API_URL/drivers?limit=10"
 ```
 
 ### Example Response
 
 ```json
 {
-  "timestamp": "2026-02-26T14:30:00Z",
-  "trips": [
+  "total": 442,
+  "limit": 10,
+  "offset": 0,
+  "count": 10,
+  "drivers": [
     {
-      "trip_id": "T123456",
-      "taxi_id": "20000001",
-      "latitude": 41.1579,
-      "longitude": -8.6291,
-      "passengers": 2,
-      "timestamp": "2026-02-26T14:30:00Z"
+      "TAXI_ID": 20000001,
+      "total_trips": 234,
+      "avg_fare": 12.45,
+      "fuel_type": "hybrid",
+      "vehicle_year": 2019
     }
   ]
 }
@@ -166,41 +171,81 @@ curl -H "x-api-key: your-key" \
 
 ## Architecture
 
-- **API Layer**: Lightweight Python REST API (FastAPI)
-- **Compute**: AWS ECS/Fargate with auto-scaling
-- **Gateway**: API Gateway with caching and authentication
-- **Monitoring**: CloudWatch dashboard with real-time metrics
-- **Data**: Pre-computed pickle files for consistency
+### Infrastructure Components
+
+- **VPC**: 2 public subnets in eu-south-2 (Spain)
+- **S3**: Data storage with VPC endpoint
+- **ECR**: Container registry
+- **Secrets Manager**: Auto-generated API key (32 chars)
+- **ECS Cluster**: 
+  - 1 normal Fargate task (always on)
+  - 2 Fargate Spot tasks (cost-optimised)
+  - Auto-scaling: 1-20 tasks based on memory (70% threshold) and request count (1000 req/target)
+- **ALB**: Public Application Load Balancer (HTTP port 80)
+- **CloudWatch**: Dashboard with comprehensive metrics
+
+### Container Specifications
+
+- **Image**: Python 3.13.7-slim
+- **CPU**: 4096 units (4 vCPU)
+- **Memory**: 8192 MB (8 GB)
+- **Port**: 8000
+- **Health check**: /health endpoint
+
+### Auto-Scaling Behaviour
+
+- **Scale out**: When memory > 70% or requests > 1000/target (60s cooldown)
+- **Scale in**: When metrics below threshold (300s cooldown)
+- **Range**: 1-20 tasks
 
 ## Monitoring Dashboard
 
 The CloudWatch dashboard displays:
-- Request count per group
-- API latency (p50, p95, p99)
-- Container health and count
-- Cache hit ratio
-- Error rates
+- ECS resource utilisation (CPU/Memory) by service type
+- Task count (Normal vs Spot)
+- API latency (Average, p95, p99)
+- Request metrics (2xx, 4xx, 5xx)
+- Connection and health metrics
+- Requests by group (log-based query)
+- Authentication failures
 
-## Load Testing
+## Makefile Targets
 
 ```bash
-# Run Artillery load test
-artillery run tst/artillery.yml
+make run              # Run API locally
+make tf-init          # Initialise Terraform
+make tf-plan          # Plan infrastructure changes
+make tf-deploy        # Deploy infrastructure
+make tf-destroy       # Destroy infrastructure
+make data-upload      # Upload parquet files to S3
+make containers-build # Build container image
+make containers-publish # Publish to ECR
+make containers-reset # Force ECS service update
+make help             # Show all targets
 ```
 
 ## Development
 
+### Data Processing
+
+The `dpt/Explorer.ipynb` notebook:
+1. Analyses Kaggle dataset to find peak 2-hour window
+2. Extends dataset with realistic random fields (passengers, fuel_type, fare, temperature, etc.)
+3. Generates two parquet files: `trips_memory.parquet` and `drivers_memory.parquet`
+
+### Container Startup
+
+The container:
+1. Attempts to load parquet files from local `/data` directory
+2. If not found, downloads from S3 bucket (environment variable: `S3_BUCKET`)
+3. Loads data into memory for fast API responses
+
 ### Adding New Endpoints
 
-1. Define model in `src/api/models.py`
-2. Add route in `src/api/routes.py`
-3. Update API documentation
-
-### Modifying Data Processing
-
-1. Update `src/etl/EXTEND.py` for data generation
-2. Regenerate pickle files with `python src/etl/ETL.py`
-3. Rebuild container
+1. Update `src/app.py` with new route
+2. Update `docs/api.yaml` with OpenAPI specification
+3. Add tests to `tst/test-api.sh`
+4. Rebuild and redeploy container
 
 ## Licence
 
@@ -213,7 +258,3 @@ Original dataset: [Kaggle - Taxi Service Trajectory Prediction Challenge](https:
 ## Contributing
 
 This is a hackathon project. Feel free to fork and adapt for your needs.
-
-## Support
-
-For issues or questions, please open an issue on the repository.
