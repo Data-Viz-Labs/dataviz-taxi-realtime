@@ -45,3 +45,15 @@ variable "desired_count_spot" {
   type        = number
   default     = 2
 }
+
+variable "min_capacity" {
+  description = "Minimum number of tasks for auto-scaling"
+  type        = number
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Maximum number of tasks for auto-scaling"
+  type        = number
+  default     = 20
+}
