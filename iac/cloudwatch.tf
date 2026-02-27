@@ -62,15 +62,13 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           metrics = [
-            ["ECS/ContainerInsights", "DesiredTaskCount", "ServiceName", aws_ecs_service.normal.name, "ClusterName", aws_ecs_cluster.main.name, { stat = "Average", label = "Normal Desired" }],
-            [".", "RunningTaskCount", ".", ".", ".", ".", { stat = "Average", label = "Normal Running" }],
-            [".", "DesiredTaskCount", ".", aws_ecs_service.spot.name, ".", ".", { stat = "Average", label = "Spot Desired" }],
-            [".", "RunningTaskCount", ".", ".", ".", ".", { stat = "Average", label = "Spot Running" }]
+            ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", aws_lb_target_group.app.arn_suffix, "LoadBalancer", aws_lb.app.arn_suffix, { stat = "Average", label = "Healthy Targets" }],
+            [".", "UnHealthyHostCount", ".", ".", ".", ".", { stat = "Average", label = "Unhealthy Targets" }]
           ]
           period = 60
           stat   = "Average"
           region = var.aws_region
-          title  = "ECS Task Count (Normal vs Spot)"
+          title  = "ECS Task Count (Healthy Targets)"
           yAxis = {
             left = {
               min = 0
