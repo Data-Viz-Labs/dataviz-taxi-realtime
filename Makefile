@@ -1,4 +1,4 @@
-.PHONY: run help data-upload tf-init tf-plan tf-apply tf-destroy containers-build containers-reset containers-publish
+.PHONY: run help data-upload tf-init tf-plan tf-apply tf-destroy containers-build containers-reset containers-publish test-local test-remote test-load
 
 # Default values for local development
 API_KEY ?= dev-key-12345
@@ -24,6 +24,11 @@ help:
 	@echo "  make containers-build    - Build Docker image"
 	@echo "  make containers-publish  - Build and push to ECR"
 	@echo "  make containers-reset    - Force ECS service update"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test-local          - Run API tests against localhost"
+	@echo "  make test-remote         - Run API tests against deployed ALB"
+	@echo "  make test-load           - Run Artillery load tests against ALB"
 
 run:
 	@echo "Starting FastAPI server on http://localhost:8000"
@@ -105,3 +110,32 @@ containers-publish:
 		exit 1; \
 	fi && \
 	./bin/publish_ecr.sh $$ECR_URL
+
+test-local:
+	@echo "Running API tests against localhost..."
+	@chmod +x tst/test-api.sh
+	@TARGET=local tst/test-api.sh
+
+test-remote:
+	@echo "Running API tests against deployed ALB..."
+	@chmod +x tst/test-api.sh
+	@TARGET=remote tst/test-api.sh
+
+test-load:
+	@echo "Running Artillery load tests..."
+	@if ! command -v artillery >/dev/null 2>&1; then \
+		echo "Error: Artillery not installed. Install with: npm install -g artillery"; \
+		exit 1; \
+	fi; \
+	API_URL=$$(cd iac && terraform output -raw api_url 2>/dev/null); \
+	API_KEY=$$(cd iac && terraform output -raw api_key 2>/dev/null); \
+	VALID_GROUPS=$$(cd iac && terraform output -raw valid_groups 2>/dev/null); \
+	GROUP_NAME=$$(echo $$VALID_GROUPS | cut -d',' -f1 | xargs); \
+	if [ -z "$$API_URL" ] || [ -z "$$API_KEY" ] || [ -z "$$GROUP_NAME" ]; then \
+		echo "Error: Infrastructure not deployed"; \
+		exit 1; \
+	fi; \
+	echo "Target: $$API_URL"; \
+	echo "Group: $$GROUP_NAME"; \
+	API_URL=$$API_URL API_KEY=$$API_KEY GROUP_NAME=$$GROUP_NAME \
+		artillery run tst/artillery.yml

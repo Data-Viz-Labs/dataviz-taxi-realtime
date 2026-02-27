@@ -2,22 +2,19 @@
 resource "aws_cloudwatch_log_metric_filter" "auth_success_by_group" {
   name           = "${local.name_prefix}-auth-success-by-group"
   log_group_name = aws_cloudwatch_log_group.ecs.name
-  pattern        = "[time, request_id, level=INFO, event=AUTH_SUCCESS, ...]"
+  pattern        = "[time, dash, name, dash2, level=INFO, dash3, msg=\"AUTH_SUCCESS*\"]"
 
   metric_transformation {
     name      = "AuthSuccessByGroup"
     namespace = local.name_prefix
     value     = "1"
-    dimensions = {
-      group = "$group"
-    }
   }
 }
 
 resource "aws_cloudwatch_log_metric_filter" "auth_failed" {
   name           = "${local.name_prefix}-auth-failed"
   log_group_name = aws_cloudwatch_log_group.ecs.name
-  pattern        = "[time, request_id, level=WARNING, event=AUTH_FAILED, ...]"
+  pattern        = "[time, dash, name, dash2, level=WARNING, dash3, msg=\"AUTH_FAILED*\"]"
 
   metric_transformation {
     name      = "AuthFailed"
@@ -65,8 +62,10 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/ECS", "RunningTaskCount", "ServiceName", aws_ecs_service.normal.name, "ClusterName", aws_ecs_cluster.main.name, { stat = "Average", label = "Normal Tasks" }],
-            ["...", aws_ecs_service.spot.name, ".", ".", { stat = "Average", label = "Spot Tasks" }]
+            ["ECS/ContainerInsights", "DesiredTaskCount", "ServiceName", aws_ecs_service.normal.name, "ClusterName", aws_ecs_cluster.main.name, { stat = "Average", label = "Normal Desired" }],
+            [".", "RunningTaskCount", ".", ".", ".", ".", { stat = "Average", label = "Normal Running" }],
+            [".", "DesiredTaskCount", ".", aws_ecs_service.spot.name, ".", ".", { stat = "Average", label = "Spot Desired" }],
+            [".", "RunningTaskCount", ".", ".", ".", ".", { stat = "Average", label = "Spot Running" }]
           ]
           period = 60
           stat   = "Average"
@@ -155,15 +154,9 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          query  = <<-EOT
-            SOURCE '${aws_cloudwatch_log_group.ecs.name}'
-            | fields @timestamp, group
-            | filter event = "AUTH_SUCCESS"
-            | stats count() by group
-            | sort count desc
-          EOT
-          region = var.aws_region
-          title  = "Requests by Group (Last Hour)"
+          query   = "SOURCE '${aws_cloudwatch_log_group.ecs.name}' | fields @timestamp, @message | filter @message like \"AUTH_SUCCESS\" | parse @message \"group=*\" as group | stats count() by group"
+          region  = var.aws_region
+          title   = "Requests by Group (Last Hour)"
         }
       },
       {
@@ -194,14 +187,9 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          query  = <<-EOT
-            SOURCE '${aws_cloudwatch_log_group.ecs.name}'
-            | fields @timestamp, event, reason
-            | filter event = "AUTH_FAILED"
-            | stats count() by reason
-          EOT
-          region = var.aws_region
-          title  = "Auth Failure Reasons"
+          query   = "SOURCE '${aws_cloudwatch_log_group.ecs.name}' | fields @timestamp, @message | filter @message like \"AUTH_FAILED\" | parse @message \"reason=* |\" as reason | stats count() by reason"
+          region  = var.aws_region
+          title   = "Auth Failure Reasons"
         }
       }
     ]
