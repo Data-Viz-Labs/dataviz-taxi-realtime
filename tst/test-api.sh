@@ -1,20 +1,53 @@
 #!/bin/bash
 #
 # API Testing Script for Porto Taxi API
-# Usage: ./tst/test-api.sh [base_url]
+# Usage: 
+#   ./tst/test-api.sh              # Local mode (default)
+#   TARGET=local ./tst/test-api.sh # Local mode (explicit)
+#   TARGET=remote ./tst/test-api.sh # Remote mode (fetch from Terraform outputs)
 #
 
 set -e
 
-BASE_URL="${1:-http://localhost:8000}"
-API_KEY="${API_KEY:-dev-key-12345}"
-GROUP_NAME="${GROUP_NAME:-dev-group}"
+TARGET="${TARGET:-local}"
+
+# Configure based on target
+if [ "$TARGET" = "remote" ]; then
+    echo "=========================================="
+    echo "Fetching remote configuration from Terraform..."
+    echo "=========================================="
+    
+    # Change to iac directory to run terraform commands
+    cd iac
+    
+    # Fetch values from Terraform outputs
+    BASE_URL=$(terraform output -raw api_url 2>/dev/null)
+    API_KEY=$(terraform output -raw api_key 2>/dev/null)
+    VALID_GROUPS=$(terraform output -raw valid_groups 2>/dev/null)
+    
+    # Extract first group from comma-separated list
+    GROUP_NAME=$(echo "$VALID_GROUPS" | cut -d',' -f1 | xargs)
+    
+    # Return to original directory
+    cd ..
+    
+    if [ -z "$BASE_URL" ] || [ -z "$API_KEY" ] || [ -z "$GROUP_NAME" ]; then
+        echo "Error: Failed to fetch Terraform outputs. Ensure infrastructure is deployed."
+        exit 1
+    fi
+else
+    # Local mode
+    BASE_URL="${BASE_URL:-http://localhost:8000}"
+    API_KEY="${API_KEY:-dev-key-12345}"
+    GROUP_NAME="${GROUP_NAME:-dev-group}"
+fi
 
 echo "=========================================="
 echo "Porto Taxi API - Test Suite"
 echo "=========================================="
+echo "Target: $TARGET"
 echo "Base URL: $BASE_URL"
-echo "API Key: $API_KEY"
+echo "API Key: ${API_KEY:0:8}..."
 echo "Group: $GROUP_NAME"
 echo ""
 

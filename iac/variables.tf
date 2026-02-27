@@ -45,9 +45,3 @@ variable "desired_count_spot" {
   type        = number
   default     = 2
 }
-
-variable "cache_ttl" {
-  description = "API Gateway cache TTL in seconds"
-  type        = number
-  default     = 300
-}
