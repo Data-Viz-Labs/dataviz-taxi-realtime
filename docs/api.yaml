@@ -204,6 +204,257 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /live:
+    get:
+      summary: Get all active trips (live simulation)
+      description: |
+        Returns all trips currently active in the simulation.
+        The simulation replays the 2-hour window from 2013-11-26 08:00-10:00 in real-time,
+        repeating every 2 hours starting at odd hours (01:00, 03:00, 05:00, etc.).
+        GPS positions are shown progressively (one every 15 seconds).
+      operationId: liveAll
+      tags:
+        - Live Simulation
+      parameters:
+        - name: driver_id
+          in: query
+          description: Optional filter by taxi driver ID
+          required: false
+          schema:
+            type: integer
+            example: 20000589
+      responses:
+        '200':
+          description: Active trips at current simulation time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  simulation_time:
+                    type: integer
+                    description: Current simulation timestamp (Unix epoch)
+                    example: 1385456400
+                  real_time:
+                    type: string
+                    format: date-time
+                    description: Current real time (ISO 8601)
+                    example: "2026-02-28T17:01:00Z"
+                  seconds_into_cycle:
+                    type: integer
+                    description: Seconds elapsed in current 2-hour cycle
+                    example: 60
+                  active_trips:
+                    type: integer
+                    description: Number of active trips
+                    example: 45
+                  trips:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LiveTrip'
+        '404':
+          description: No active trips at current simulation time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Data not loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /live/{driver_id}:
+    get:
+      summary: Get active trips for specific driver
+      description: Returns active trips for a specific driver at current simulation time
+      operationId: liveDriver
+      tags:
+        - Live Simulation
+      parameters:
+        - name: driver_id
+          in: path
+          description: Taxi driver ID
+          required: true
+          schema:
+            type: integer
+            example: 20000589
+      responses:
+        '200':
+          description: Active trips for the driver
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  simulation_time:
+                    type: integer
+                    example: 1385456400
+                  real_time:
+                    type: string
+                    format: date-time
+                    example: "2026-02-28T17:01:00Z"
+                  seconds_into_cycle:
+                    type: integer
+                    example: 60
+                  active_trips:
+                    type: integer
+                    example: 1
+                  trips:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LiveTrip'
+        '404':
+          description: Driver has no active trips
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /live/{driver_id}/latest:
+    get:
+      summary: Get latest GPS position for driver
+      description: Returns only the current GPS position without history
+      operationId: liveDriverLatest
+      tags:
+        - Live Simulation
+      parameters:
+        - name: driver_id
+          in: path
+          description: Taxi driver ID
+          required: true
+          schema:
+            type: integer
+            example: 20000589
+      responses:
+        '200':
+          description: Current position and trip details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  simulation_time:
+                    type: integer
+                    example: 1385456400
+                  real_time:
+                    type: string
+                    format: date-time
+                    example: "2026-02-28T17:01:00Z"
+                  driver_id:
+                    type: integer
+                    example: 20000589
+                  trip_id:
+                    type: integer
+                    example: 1372636858620000589
+                  elapsed_seconds:
+                    type: integer
+                    description: Seconds elapsed since trip start
+                    example: 120
+                  total_duration:
+                    type: integer
+                    description: Total trip duration in seconds
+                    example: 600
+                  progress_pct:
+                    type: number
+                    format: float
+                    description: Trip progress percentage
+                    example: 20.0
+                  current_position:
+                    type: array
+                    description: Current GPS coordinates [longitude, latitude]
+                    items:
+                      type: number
+                      format: float
+                    example: [-8.618643, 41.141412]
+                  trip_details:
+                    $ref: '#/components/schemas/TripDetails'
+        '404':
+          description: Driver has no active trip
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /live/{driver_id}/trip/{trip_id}:
+    get:
+      summary: Get specific trip with GPS history
+      description: Returns detailed information for a specific trip including GPS history
+      operationId: liveDriverTrip
+      tags:
+        - Live Simulation
+      parameters:
+        - name: driver_id
+          in: path
+          description: Taxi driver ID
+          required: true
+          schema:
+            type: integer
+            example: 20000589
+        - name: trip_id
+          in: path
+          description: Trip ID
+          required: true
+          schema:
+            type: integer
+            example: 1372636858620000589
+      responses:
+        '200':
+          description: Trip details with GPS history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  simulation_time:
+                    type: integer
+                    example: 1385456400
+                  real_time:
+                    type: string
+                    format: date-time
+                    example: "2026-02-28T17:01:00Z"
+                  driver_id:
+                    type: integer
+                    example: 20000589
+                  trip_id:
+                    type: integer
+                    example: 1372636858620000589
+                  elapsed_seconds:
+                    type: integer
+                    example: 120
+                  total_duration:
+                    type: integer
+                    example: 600
+                  progress_pct:
+                    type: number
+                    format: float
+                    example: 20.0
+                  gps_history:
+                    type: array
+                    description: GPS coordinates history (one every 15 seconds)
+                    items:
+                      type: array
+                      items:
+                        type: number
+                        format: float
+                    example: [[-8.618643, 41.141412], [-8.618499, 41.141376]]
+                  current_position:
+                    type: array
+                    items:
+                      type: number
+                      format: float
+                    example: [-8.618499, 41.141376]
+                  trip_data:
+                    type: object
+                    description: Complete trip data
+        '404':
+          description: Trip not found or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   schemas:
     Driver:
@@ -288,6 +539,79 @@ components:
         error:
           type: string
           example: Data not loaded
+    
+    TripDetails:
+      type: object
+      properties:
+        call_type:
+          type: string
+          enum: [A, B, C]
+          example: C
+        passengers:
+          type: integer
+          nullable: true
+          example: 2
+        fare:
+          type: number
+          format: float
+          nullable: true
+          example: 12.50
+        payment:
+          type: string
+          nullable: true
+          enum: [cash, card]
+          example: cash
+        purpose:
+          type: string
+          nullable: true
+          enum: [work, leisure]
+          example: work
+        fuel_type:
+          type: string
+          nullable: true
+          enum: [diesel, hybrid, electric, lpg, gasoline]
+          example: hybrid
+    
+    LiveTrip:
+      type: object
+      properties:
+        driver_id:
+          type: integer
+          example: 20000589
+        trip_id:
+          type: integer
+          example: 1372636858620000589
+        elapsed_seconds:
+          type: integer
+          description: Seconds elapsed since trip start
+          example: 120
+        total_duration:
+          type: integer
+          description: Total trip duration in seconds
+          example: 600
+        progress_pct:
+          type: number
+          format: float
+          description: Trip progress percentage
+          example: 20.0
+        trip_details:
+          $ref: '#/components/schemas/TripDetails'
+        gps_history:
+          type: array
+          description: GPS coordinates history (one every 15 seconds)
+          items:
+            type: array
+            items:
+              type: number
+              format: float
+          example: [[-8.618643, 41.141412], [-8.618499, 41.141376]]
+        current_position:
+          type: array
+          description: Current GPS coordinates [longitude, latitude]
+          items:
+            type: number
+            format: float
+          example: [-8.618499, 41.141376]
 
   securitySchemes:
     ApiKeyAuth:

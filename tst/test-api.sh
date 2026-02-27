@@ -189,6 +189,31 @@ test_endpoint "List Trips (filter by date)" "GET" "/trips?date=1372636858&limit=
 test_endpoint "List Trips (both filters)" "GET" "/trips?driver_id=20000589&date=1372636858&limit=5" 200
 test_endpoint "List Trips (no results)" "GET" "/trips?driver_id=99999999" 404
 
+echo "=========================================="
+echo "Live Simulation Endpoints"
+echo "=========================================="
+echo ""
+
+# First, get an active driver from /live
+echo -n "Getting active driver for tests ... "
+response=$(curl -s -H "x-api-key: $API_KEY" -H "x-group-name: $GROUP_NAME" "$BASE_URL/live")
+ACTIVE_DRIVER=$(echo "$response" | jq -r '.trips[0].driver_id // empty' 2>/dev/null)
+ACTIVE_TRIP=$(echo "$response" | jq -r '.trips[0].trip_id // empty' 2>/dev/null)
+
+if [ -n "$ACTIVE_DRIVER" ] && [ -n "$ACTIVE_TRIP" ]; then
+    echo -e "${GREEN}Found driver $ACTIVE_DRIVER with trip $ACTIVE_TRIP${NC}"
+    echo ""
+    
+    test_endpoint "Live - All active trips" "GET" "/live" 200
+    test_endpoint "Live - Filter by driver" "GET" "/live?driver_id=$ACTIVE_DRIVER" 200
+    test_endpoint "Live - Specific driver" "GET" "/live/$ACTIVE_DRIVER" 200
+    test_endpoint "Live - Driver latest position" "GET" "/live/$ACTIVE_DRIVER/latest" 200
+    test_endpoint "Live - Specific trip" "GET" "/live/$ACTIVE_DRIVER/trip/$ACTIVE_TRIP" 200
+else
+    echo -e "${YELLOW}No active trips found, skipping live endpoint tests${NC}"
+    echo ""
+fi
+
 # Summary
 echo "=========================================="
 echo "Test Summary"

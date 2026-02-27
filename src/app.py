@@ -7,9 +7,10 @@ Loads parquet files from local data/ directory or S3 bucket.
 
 import os
 import logging
+import json
 from pathlib import Path
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 import boto3
@@ -32,6 +33,12 @@ drivers_df = None
 # Authentication configuration
 API_KEY = os.getenv("API_KEY", "dev-key-12345")
 VALID_GROUPS = os.getenv("VALID_GROUPS", "dev-group,test-group").split(",")
+
+# Simulation configuration
+# Reference time: 2013-11-26 08:00:00 (most active 2-hour window)
+SIMULATION_START = datetime(2013, 11, 26, 8, 0, 0, tzinfo=timezone.utc)
+SIMULATION_DURATION_SECONDS = 2 * 60 * 60  # 2 hours
+SIMULATION_CYCLE_STARTS = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]  # Odd hours
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -310,6 +317,259 @@ async def list_trips(
             "date": date
         },
         "trips": trips
+    }
+
+
+def get_simulation_time():
+    """
+    Calculate current simulation time based on real time.
+    
+    Simulation repeats every 2 hours starting at odd hours (01:00, 03:00, ..., 23:00).
+    Maps current time to the 2-hour window starting at 2013-11-26 08:00:00.
+    
+    Returns:
+        tuple: (simulation_timestamp, seconds_into_cycle)
+    """
+    now = datetime.now(timezone.utc)
+    
+    # Find current cycle start (most recent odd hour)
+    current_hour = now.hour
+    if current_hour % 2 == 0:
+        # Even hour: go back to previous odd hour
+        cycle_start_hour = (current_hour - 1) % 24
+    else:
+        # Odd hour: use current hour
+        cycle_start_hour = current_hour
+    
+    cycle_start = now.replace(hour=cycle_start_hour, minute=0, second=0, microsecond=0)
+    
+    # If we went back in time (e.g., from 00:xx to 23:00), adjust the date
+    if cycle_start > now:
+        cycle_start = cycle_start.replace(day=cycle_start.day - 1)
+    
+    # Calculate seconds into current 2-hour cycle
+    seconds_into_cycle = int((now - cycle_start).total_seconds())
+    
+    # Map to simulation time
+    simulation_timestamp = int(SIMULATION_START.timestamp()) + seconds_into_cycle
+    
+    return simulation_timestamp, seconds_into_cycle
+
+
+def parse_polyline(polyline_str):
+    """Parse polyline JSON string to list of coordinates."""
+    try:
+        return json.loads(polyline_str)
+    except:
+        return []
+
+
+@app.get("/live")
+async def live_all(driver_id: int = None):
+    """
+    Get all active trips at current simulation time.
+    
+    Args:
+        driver_id: Optional filter by TAXI_ID
+    
+    Returns:
+        List of active trips with current GPS position and trip details
+    """
+    if trips_df is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Data not loaded"}
+        )
+    
+    sim_timestamp, seconds_into_cycle = get_simulation_time()
+    
+    # Filter trips that are active at simulation time
+    # A trip is active if: start_time <= sim_time < end_time
+    active_trips = trips_df[
+        (trips_df["TIMESTAMP"] <= sim_timestamp) &
+        (trips_df["TIMESTAMP"] + trips_df["duration_sec"] > sim_timestamp)
+    ].copy()
+    
+    if driver_id is not None:
+        active_trips = active_trips[active_trips["TAXI_ID"] == driver_id]
+    
+    if len(active_trips) == 0:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "No active trips at current simulation time"}
+        )
+    
+    # Build response with GPS history
+    result = []
+    for _, trip in active_trips.iterrows():
+        elapsed = sim_timestamp - trip["TIMESTAMP"]
+        polyline = parse_polyline(trip["POLYLINE"])
+        
+        # Calculate how many GPS points to show (one every 15 seconds)
+        points_to_show = min(int(elapsed / 15) + 1, len(polyline))
+        
+        trip_data = {
+            "driver_id": int(trip["TAXI_ID"]),
+            "trip_id": int(trip["TRIP_ID"]),
+            "elapsed_seconds": int(elapsed),
+            "total_duration": int(trip["duration_sec"]),
+            "progress_pct": round((elapsed / trip["duration_sec"]) * 100, 2),
+            "trip_details": {
+                "call_type": trip["CALL_TYPE"],
+                "passengers": int(trip["passengers"]) if pd.notna(trip["passengers"]) else None,
+                "fare": float(trip["fare"]) if pd.notna(trip["fare"]) else None,
+                "payment": trip["payment"] if pd.notna(trip["payment"]) else None,
+                "purpose": trip["purpose"] if pd.notna(trip["purpose"]) else None,
+                "fuel_type": trip["fuel_type"] if pd.notna(trip["fuel_type"]) else None,
+            },
+            "gps_history": polyline[:points_to_show],
+            "current_position": polyline[points_to_show - 1] if points_to_show > 0 else None
+        }
+        result.append(trip_data)
+    
+    return {
+        "simulation_time": sim_timestamp,
+        "real_time": datetime.now(timezone.utc).isoformat(),
+        "seconds_into_cycle": seconds_into_cycle,
+        "active_trips": len(result),
+        "trips": result
+    }
+
+
+@app.get("/live/{driver_id}")
+async def live_driver(driver_id: int):
+    """
+    Get active trips for specific driver at current simulation time.
+    
+    Args:
+        driver_id: TAXI_ID to filter
+    
+    Returns:
+        Active trips for the driver with GPS history
+    """
+    return await live_all(driver_id=driver_id)
+
+
+@app.get("/live/{driver_id}/latest")
+async def live_driver_latest(driver_id: int):
+    """
+    Get latest GPS position for driver's active trip (no history).
+    
+    Args:
+        driver_id: TAXI_ID to filter
+    
+    Returns:
+        Current position and trip details only
+    """
+    if trips_df is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Data not loaded"}
+        )
+    
+    sim_timestamp, seconds_into_cycle = get_simulation_time()
+    
+    # Find active trip for driver
+    active_trip = trips_df[
+        (trips_df["TAXI_ID"] == driver_id) &
+        (trips_df["TIMESTAMP"] <= sim_timestamp) &
+        (trips_df["TIMESTAMP"] + trips_df["duration_sec"] > sim_timestamp)
+    ]
+    
+    if len(active_trip) == 0:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Driver {driver_id} has no active trip"}
+        )
+    
+    trip = active_trip.iloc[0]
+    elapsed = sim_timestamp - trip["TIMESTAMP"]
+    polyline = parse_polyline(trip["POLYLINE"])
+    
+    # Get current position only
+    points_to_show = min(int(elapsed / 15) + 1, len(polyline))
+    current_pos = polyline[points_to_show - 1] if points_to_show > 0 else None
+    
+    return {
+        "simulation_time": sim_timestamp,
+        "real_time": datetime.now(timezone.utc).isoformat(),
+        "driver_id": int(trip["TAXI_ID"]),
+        "trip_id": int(trip["TRIP_ID"]),
+        "elapsed_seconds": int(elapsed),
+        "total_duration": int(trip["duration_sec"]),
+        "progress_pct": round((elapsed / trip["duration_sec"]) * 100, 2),
+        "current_position": current_pos,
+        "trip_details": {
+            "call_type": trip["CALL_TYPE"],
+            "passengers": int(trip["passengers"]) if pd.notna(trip["passengers"]) else None,
+            "fare": float(trip["fare"]) if pd.notna(trip["fare"]) else None,
+            "payment": trip["payment"] if pd.notna(trip["payment"]) else None,
+            "purpose": trip["purpose"] if pd.notna(trip["purpose"]) else None,
+        }
+    }
+
+
+@app.get("/live/{driver_id}/trip/{trip_id}")
+async def live_driver_trip(driver_id: int, trip_id: int):
+    """
+    Get specific trip details with GPS history.
+    
+    Args:
+        driver_id: TAXI_ID
+        trip_id: TRIP_ID
+    
+    Returns:
+        Trip details with GPS history up to current simulation time
+    """
+    if trips_df is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Data not loaded"}
+        )
+    
+    sim_timestamp, seconds_into_cycle = get_simulation_time()
+    
+    # Find specific trip
+    trip_match = trips_df[
+        (trips_df["TAXI_ID"] == driver_id) &
+        (trips_df["TRIP_ID"] == trip_id)
+    ]
+    
+    if len(trip_match) == 0:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Trip {trip_id} not found for driver {driver_id}"}
+        )
+    
+    trip = trip_match.iloc[0]
+    
+    # Check if trip is active
+    is_active = (trip["TIMESTAMP"] <= sim_timestamp < trip["TIMESTAMP"] + trip["duration_sec"])
+    
+    if not is_active:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Trip {trip_id} is not active at current simulation time"}
+        )
+    
+    elapsed = sim_timestamp - trip["TIMESTAMP"]
+    polyline = parse_polyline(trip["POLYLINE"])
+    points_to_show = min(int(elapsed / 15) + 1, len(polyline))
+    
+    # Replace NaN/inf with None
+    trip_dict = trip.replace({float('nan'): None, float('inf'): None, float('-inf'): None}).to_dict()
+    
+    return {
+        "simulation_time": sim_timestamp,
+        "real_time": datetime.now(timezone.utc).isoformat(),
+        "driver_id": int(trip["TAXI_ID"]),
+        "trip_id": int(trip["TRIP_ID"]),
+        "elapsed_seconds": int(elapsed),
+        "total_duration": int(trip["duration_sec"]),
+        "progress_pct": round((elapsed / trip["duration_sec"]) * 100, 2),
+        "gps_history": polyline[:points_to_show],
+        "current_position": polyline[points_to_show - 1] if points_to_show > 0 else None,
+        "trip_data": trip_dict
     }
 
 
